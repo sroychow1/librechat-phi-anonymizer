@@ -4,7 +4,12 @@ import {
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
 import type { DeepPartial, TCustomConfig } from 'librechat-data-provider';
-import { AppService, loadFiltersConfig, loadSummarizationConfig } from './service';
+import {
+  AppService,
+  loadFiltersConfig,
+  loadPhiAnonymizerConfig,
+  loadSummarizationConfig,
+} from './service';
 import logger from '~/config/winston';
 
 jest.mock('~/config/winston', () => ({
@@ -81,6 +86,35 @@ describe('loadSummarizationConfig', () => {
     expect(result).toBeUndefined();
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(String(warnSpy.mock.calls[0][0])).toContain('Invalid summarization config');
+  });
+});
+
+describe('loadPhiAnonymizerConfig', () => {
+  it('returns undefined when the block is absent', () => {
+    expect(loadPhiAnonymizerConfig({})).toBeUndefined();
+  });
+
+  it('applies schema defaults to a partial block so runtime never sees missing fields', () => {
+    expect(loadPhiAnonymizerConfig({ phiAnonymizer: { enabled: true } })).toEqual({
+      enabled: true,
+      analyzerUrl: 'http://presidio-analyzer:3000',
+      language: 'en',
+      scoreThreshold: 0.35,
+      failMode: 'block',
+      sessionTtlMinutes: 240,
+    });
+  });
+
+  it('keeps operator-provided values', () => {
+    expect(
+      loadPhiAnonymizerConfig({
+        phiAnonymizer: {
+          enabled: true,
+          analyzerUrl: 'http://127.0.0.1:5002',
+          failMode: 'passthrough',
+        },
+      }),
+    ).toMatchObject({ analyzerUrl: 'http://127.0.0.1:5002', failMode: 'passthrough' });
   });
 });
 

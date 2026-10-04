@@ -7,6 +7,7 @@ import {
   hasActiveFiltersConfig,
   getConfigDefaults,
   langfuseConfigSchema,
+  phiAnonymizerSchema,
   skillSyncConfigSchema,
   summarizationConfigSchema,
 } from 'librechat-data-provider';
@@ -72,6 +73,24 @@ export function loadSkillSyncConfig(config: DeepPartial<TCustomConfig>): AppConf
   const parsed = skillSyncConfigSchema.safeParse(raw);
   if (!parsed.success) {
     logger.warn('[AppService] Invalid skill sync config', parsed.error.flatten());
+    return undefined;
+  }
+
+  return parsed.data;
+}
+
+/** Resolves the PHI anonymizer block with schema defaults applied; an invalid block is ignored. */
+export function loadPhiAnonymizerConfig(
+  config: DeepPartial<TCustomConfig>,
+): AppConfig['phiAnonymizer'] {
+  const raw = config.phiAnonymizer;
+  if (!raw || typeof raw !== 'object') {
+    return undefined;
+  }
+
+  const parsed = phiAnonymizerSchema.safeParse(raw);
+  if (!parsed.success) {
+    logger.warn('[AppService] Invalid PHI anonymizer config', parsed.error.flatten());
     return undefined;
   }
 
@@ -211,6 +230,7 @@ export const AppService = async (params?: {
     filters,
     langfuse,
     messageFilter,
+    phiAnonymizer: loadPhiAnonymizerConfig(config),
     summarization,
     availableTools,
     imageOutputType,

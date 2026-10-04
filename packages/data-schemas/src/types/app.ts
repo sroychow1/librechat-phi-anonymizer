@@ -70,6 +70,8 @@ export interface AppConfig {
   filters?: FiltersConfig;
   /** Message filter configuration (PII and future filter types) */
   messageFilter?: TCustomConfig['messageFilter'];
+  /** PHI anonymizer configuration (Presidio analyzer, placeholder substitution) */
+  phiAnonymizer?: TCustomConfig['phiAnonymizer'];
   /** Langfuse tracing configuration */
   langfuse?: TCustomConfig['langfuse'];
   /** Skill sync configuration */
