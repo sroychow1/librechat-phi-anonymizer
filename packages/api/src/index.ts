@@ -67,6 +67,8 @@ export * from './middleware';
 export * from './security';
 /* Content protection */
 export * from './protection';
+/* PHI anonymization */
+export * from './phi';
 /* Imports */
 export * from './imports';
 /* Memory */

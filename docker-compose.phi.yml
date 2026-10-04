@@ -1,0 +1,12 @@
+# PHI anonymizer sidecar. Opt in with scripts/phi/install.sh, which adds this file to COMPOSE_FILE in .env.
+# The analyzer is published on loopback only, so the health check and smoke test can reach it from the host.
+services:
+  presidio-analyzer:
+    container_name: presidio-analyzer
+    image: mcr.microsoft.com/presidio-analyzer:latest
+    restart: always
+    ports:
+      - "127.0.0.1:5002:3000"
+  api:
+    depends_on:
+      - presidio-analyzer

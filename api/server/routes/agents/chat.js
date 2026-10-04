@@ -2,6 +2,9 @@ const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const {
   createMessageFilterPii,
+  createPhiAnonymizer,
+  createPhiSessionStore,
+  createPresidioAnalyzer,
   getPreinspectedPrivateText,
   reportLocatorTraversalFailure,
   generateCheckAccess,
@@ -69,6 +72,14 @@ router.use(
     getFilters: (req) => req.config?.filters,
     getPreinspectedText: getPreinspectedPrivateText,
     getFiles,
+  }),
+);
+const phiSessions = createPhiSessionStore();
+router.use(
+  createPhiAnonymizer({
+    getConfig: (req) => req.config?.phiAnonymizer,
+    createAnalyzer: (baseUrl) => createPresidioAnalyzer({ baseUrl }),
+    sessions: phiSessions,
   }),
 );
 router.use(moderateText);

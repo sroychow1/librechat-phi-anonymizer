@@ -3533,6 +3533,24 @@ export const messageFilterSchema = z.object({
 
 export type MessageFilterConfig = z.infer<typeof messageFilterSchema>;
 
+export const PHI_ANONYMIZER_DEFAULT_URL = 'http://presidio-analyzer:3000';
+
+export const phiAnonymizerSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Base URL of the Presidio analyzer service. */
+  analyzerUrl: z.string().url().default(PHI_ANONYMIZER_DEFAULT_URL),
+  language: z.string().min(2).max(5).default('en'),
+  /** Presidio entity types to detect. Omit to use the built-in PHI set. */
+  entities: z.array(z.string().min(1).max(64)).max(64).optional(),
+  scoreThreshold: z.number().min(0).max(1).default(0.5),
+  /** `block` refuses the message when the analyzer is unreachable; `passthrough` sends it unredacted. */
+  failMode: z.enum(['block', 'passthrough']).default('block'),
+  /** How long a conversation's placeholder mapping is kept after its last turn. */
+  sessionTtlMinutes: z.number().int().min(1).max(10080).default(240),
+});
+
+export type PhiAnonymizerConfig = z.infer<typeof phiAnonymizerSchema>;
+
 /** User fields a deployment may select as the Langfuse trace `userId`. */
 export const LANGFUSE_TRACE_USER_ID_FIELDS = [
   'id',
@@ -3912,6 +3930,7 @@ export const configSchema = z.object({
   modelSpecs: specsConfigSchema.optional(),
   filters: filtersConfigSchema.optional(),
   messageFilter: messageFilterSchema.optional(),
+  phiAnonymizer: phiAnonymizerSchema.optional(),
   endpoints: z
     .object({
       allowedAddresses: allowedAddressesSchema,

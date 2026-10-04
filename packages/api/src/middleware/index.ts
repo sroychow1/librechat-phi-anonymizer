@@ -23,6 +23,7 @@ export * from './share';
 export * from './contentFilter';
 export * from './modelBoundContent';
 export * from './messageFilterPii';
+export * from './phiAnonymizer';
 export * from './messageValidation';
 export * from './feedback';
 export * from './generationRetry';
