@@ -209,3 +209,7 @@ Run focused Jest tests from the owning workspace, not the entire monorepo. Prefe
 spies over mocked internals; use `mongodb-memory-server` for database queries and the real MCP SDK
 for MCP behavior. Mock only external HTTP APIs or uncontrollable services. For frontend tests use
 the component's colocated `__tests__` and `test/layout-test-utils` where applicable.
+
+## PHI anonymizer
+
+To set up, test, or troubleshoot the PHI anonymizer (Presidio sidecar, `phiAnonymizer` config), read `docs/phi-anonymizer-setup.md` first. Its gotchas are not obvious from the code. Redaction covers outgoing user messages only, and replies are not restored yet, so keep `phiAnonymizer.enabled` false for real users.
