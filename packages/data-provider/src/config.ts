@@ -3542,7 +3542,7 @@ export const phiAnonymizerSchema = z.object({
   language: z.string().min(2).max(5).default('en'),
   /** Presidio entity types to detect. Omit to use the built-in PHI set. */
   entities: z.array(z.string().min(1).max(64)).max(64).optional(),
-  scoreThreshold: z.number().min(0).max(1).default(0.5),
+  scoreThreshold: z.number().min(0).max(1).default(0.35),
   /** `block` refuses the message when the analyzer is unreachable; `passthrough` sends it unredacted. */
   failMode: z.enum(['block', 'passthrough']).default('block'),
   /** How long a conversation's placeholder mapping is kept after its last turn. */

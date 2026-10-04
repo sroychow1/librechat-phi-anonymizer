@@ -28,7 +28,7 @@ phiAnonymizer:
   enabled: true
   analyzerUrl: http://presidio-analyzer:3000
   language: en
-  scoreThreshold: 0.5
+  scoreThreshold: 0.35
   failMode: block        # block: refuse the message if the analyzer is down; passthrough: send unredacted
   sessionTtlMinutes: 240
 ```
