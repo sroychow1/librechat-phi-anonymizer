@@ -48,6 +48,7 @@ const {
   retainScheduleMCPCompletion,
   getScheduleMCPExecution,
   getMCPRequestContext,
+  getPhiRequestState,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -1871,6 +1872,7 @@ const initializeClientWithProvider = async ({
     eventChildActivity,
     resolveMcpServerName,
     toolTimingReplayEvents,
+    phiVault: getPhiRequestState(req)?.vault,
   });
 
   const client = new AgentClient({

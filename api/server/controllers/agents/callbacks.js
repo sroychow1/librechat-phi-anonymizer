@@ -37,6 +37,7 @@ const {
   collectToolCallIds,
   createToolTimingAdapter,
   stampCommandExecutor,
+  createPhiReplyRestorer,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
@@ -412,12 +413,17 @@ function getDefaultHandlers({
   eventChildActivity = null,
   resolveMcpServerName = null,
   toolTimingReplayEvents = [],
+  phiVault = null,
 }) {
   if (!res || !aggregateContent) {
     throw new Error(
       `[getDefaultHandlers] Missing required options: res: ${!res}, aggregateContent: ${!aggregateContent}`,
     );
   }
+  /** Restores PHI placeholders in the streamed reply before it is aggregated (persisted)
+   *  and emitted (shown live), so both sides see the original text. `null` when the PHI
+   *  anonymizer is off or this turn had no PHI to redact. */
+  const phiReplyRestorer = phiVault ? createPhiReplyRestorer(phiVault) : null;
   const eventActivityPhases = {
     [GraphEvents.ON_RUN_STEP]: 'run_step',
     [GraphEvents.ON_RUN_STEP_DELTA]: 'run_step_delta',
@@ -614,6 +620,29 @@ function getDefaultHandlers({
             }
           }
         }
+        /** Release any placeholder fragment this step's PHI restorer was still holding
+         *  (e.g. a provider that split `<PERSON_1>` across the last two tokens), as one
+         *  final delta so it reaches both the live stream and the aggregated/persisted
+         *  content before the step's closure is forwarded. */
+        if (phiReplyRestorer && typeof stepId === 'string') {
+          const flushed = phiReplyRestorer.flushStep(stepId);
+          if (flushed.text.length > 0) {
+            const trailingText = {
+              id: stepId,
+              delta: { content: [{ type: ContentTypes.TEXT, text: flushed.text }] },
+            };
+            aggregateContent({ event: GraphEvents.ON_MESSAGE_DELTA, data: trailingText });
+            await emitForJob({ event: GraphEvents.ON_MESSAGE_DELTA, data: trailingText });
+          }
+          if (flushed.think.length > 0) {
+            const trailingThink = {
+              id: stepId,
+              delta: { content: [{ type: ContentTypes.THINK, think: flushed.think }] },
+            };
+            aggregateContent({ event: GraphEvents.ON_REASONING_DELTA, data: trailingThink });
+            await emitForJob({ event: GraphEvents.ON_REASONING_DELTA, data: trailingThink });
+          }
+        }
         await emitForJob({ event, data });
       },
     },
@@ -693,6 +722,7 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        phiReplyRestorer?.restoreMessageDelta(data?.id, data?.delta?.content);
         aggregateContent({ event, data });
         if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           await emitForJob({ event, data });
@@ -709,6 +739,7 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        phiReplyRestorer?.restoreReasoningDelta(data?.id, data?.delta?.content);
         aggregateContent({ event, data });
         if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           await emitForJob({ event, data });

@@ -9573,6 +9573,116 @@ describe('AgentClient - finalizeSubagentContent', () => {
   });
 });
 
+describe('getDefaultHandlers - PHI reply restoration', () => {
+  const { GraphEvents } = jest.requireActual('@librechat/agents');
+  const { getDefaultHandlers } = require('./callbacks');
+  const { createPhiVault, redactText } = require('@librechat/api');
+
+  /** A vault that already maps the single placeholder `<PERSON_1>` back to `Ana`,
+   *  as the inbound PHI middleware would have built it for this turn's message. */
+  const buildVault = () => {
+    const vault = createPhiVault();
+    redactText('Ana', [{ entity_type: 'PERSON', start: 0, end: 3, score: 0.9 }], vault);
+    return vault;
+  };
+
+  /** Reads every emitted SSE payload off a `res.write` mock, in order. */
+  const emittedPayloads = (res) =>
+    res.write.mock.calls.map(([frame]) => JSON.parse(frame.split('data: ')[1].split('\n')[0]));
+
+  it('restores a placeholder in a message delta before it is aggregated and emitted', async () => {
+    const res = { write: jest.fn(), writableEnded: false };
+    const aggregateContent = jest.fn();
+    const handlers = getDefaultHandlers({
+      res,
+      aggregateContent,
+      collectedUsage: [],
+      phiVault: buildVault(),
+    });
+
+    const data = {
+      id: 'step_1',
+      delta: { content: [{ type: 'text', text: 'Hello <PERSON_1>!' }] },
+    };
+    await handlers[GraphEvents.ON_MESSAGE_DELTA].handle(GraphEvents.ON_MESSAGE_DELTA, data);
+
+    expect(data.delta.content[0].text).toBe('Hello Ana!');
+    expect(aggregateContent).toHaveBeenCalledWith({ event: GraphEvents.ON_MESSAGE_DELTA, data });
+    expect(emittedPayloads(res)[0].data.delta.content[0].text).toBe('Hello Ana!');
+  });
+
+  it('restores a placeholder split across two deltas for the same step', async () => {
+    const res = { write: jest.fn(), writableEnded: false };
+    const aggregateContent = jest.fn();
+    const handlers = getDefaultHandlers({
+      res,
+      aggregateContent,
+      collectedUsage: [],
+      phiVault: buildVault(),
+    });
+    const handler = handlers[GraphEvents.ON_MESSAGE_DELTA];
+
+    const first = { id: 'step_1', delta: { content: [{ type: 'text', text: 'Hi <PER' }] } };
+    const second = { id: 'step_1', delta: { content: [{ type: 'text', text: 'SON_1>!' }] } };
+    await handler.handle(GraphEvents.ON_MESSAGE_DELTA, first);
+    await handler.handle(GraphEvents.ON_MESSAGE_DELTA, second);
+
+    expect(first.delta.content[0].text).toBe('Hi ');
+    expect(second.delta.content[0].text).toBe('Ana!');
+  });
+
+  it('flushes a held fragment as a trailing message delta before forwarding the step closure', async () => {
+    const res = { write: jest.fn(), writableEnded: false };
+    const aggregateContent = jest.fn();
+    const handlers = getDefaultHandlers({
+      res,
+      aggregateContent,
+      collectedUsage: [],
+      phiVault: buildVault(),
+    });
+
+    // `<PERSON_1` never gets its closing bracket, so it is held back by the first
+    // delta's push (the SDK's last token for this step) and can never be confirmed
+    // as a placeholder. The flush at step closure must still release it as raw text
+    // rather than drop it, even though it cannot restore an un-terminated fragment.
+    await handlers[GraphEvents.ON_MESSAGE_DELTA].handle(GraphEvents.ON_MESSAGE_DELTA, {
+      id: 'step_1',
+      delta: { content: [{ type: 'text', text: 'Hi <PERSON_1' }] },
+    });
+    expect(emittedPayloads(res)[0].data.delta.content[0].text).toBe('Hi ');
+
+    res.write.mockClear();
+    aggregateContent.mockClear();
+    await handlers[GraphEvents.ON_RUN_STEP_CLOSED].handle(GraphEvents.ON_RUN_STEP_CLOSED, {
+      id: 'step_1',
+      status: 'completed',
+    });
+
+    // ON_RUN_STEP_CLOSED itself never reaches aggregateContent (it mutates contentParts
+    // directly via stepMap); only the synthesized flush delta should be aggregated.
+    const aggregateCalls = aggregateContent.mock.calls.map(([call]) => call.event);
+    expect(aggregateCalls).toEqual([GraphEvents.ON_MESSAGE_DELTA]);
+    const payloads = emittedPayloads(res);
+    expect(payloads[0].event).toBe(GraphEvents.ON_MESSAGE_DELTA);
+    expect(payloads[0].data.delta.content[0].text).toBe('<PERSON_1');
+    expect(payloads[1].event).toBe(GraphEvents.ON_RUN_STEP_CLOSED);
+  });
+
+  it('does nothing when no PHI vault is supplied', async () => {
+    const res = { write: jest.fn(), writableEnded: false };
+    const aggregateContent = jest.fn();
+    const handlers = getDefaultHandlers({ res, aggregateContent, collectedUsage: [] });
+
+    const data = {
+      id: 'step_1',
+      delta: { content: [{ type: 'text', text: 'Hello <PERSON_1>!' }] },
+    };
+    await handlers[GraphEvents.ON_MESSAGE_DELTA].handle(GraphEvents.ON_MESSAGE_DELTA, data);
+
+    expect(data.delta.content[0].text).toBe('Hello <PERSON_1>!');
+  });
+});
+
 describe('AgentClient - resumeCompletion content protection', () => {
   const makeContext = (filters) => ({
     options: {
