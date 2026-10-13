@@ -2,7 +2,7 @@
 
 How to install, verify, and troubleshoot the optional PHI anonymizer on a new machine. Written from a working end-to-end run; each gotcha below was hit once.
 
-The feature replaces PHI in the outgoing user message with placeholders (`<PERSON_1>`, `<MEDICAL_RECORD_NUMBER_1>`) before the model call, using a Microsoft Presidio analyzer container. **Replies are not restored yet**, so the feature must stay disabled for real users. See [Current limits](#current-limits).
+The feature replaces PHI in the outgoing user message with placeholders (`<PERSON_1>`, `<MEDICAL_RECORD_NUMBER_1>`) before the model call, using a Microsoft Presidio analyzer container. The assistant's reply is restored back to the original text, live in the stream and in the saved message. The installer still ships the feature with `enabled: false` — real-user readiness also depends on the remaining items in [Current limits](#current-limits), in particular that the user's own message stays saved with placeholders and that placeholder mappings are in memory only.
 
 ## 1. Requirements
 
@@ -98,12 +98,12 @@ Expected results:
 
 | Scenario | Model receives | Client sees |
 |---|---|---|
-| Analyzer up, `block` | Placeholders | Reply with placeholders |
+| Analyzer up, `block` | Placeholders | Reply with placeholders restored to the original text |
 | Analyzer stopped, `block` | Nothing new | 503 `phi_anonymizer_unavailable` |
 | Analyzer stopped, `passthrough` | Original text | Reply; log warning `passing message through unredacted` |
 | No PHI in message | Unchanged | Reply |
 
-Read the reply from the saved message's `content` array. The top-level `text` is empty for agent messages, which is normal.
+Read the reply from the saved message's `content` array. The top-level `text` is empty for agent messages, which is normal. The saved **user** message still holds placeholders — that restoration is a separate, not-yet-done path (see [Current limits](#current-limits)).
 
 ## 6. Gotchas
 
@@ -132,10 +132,11 @@ Typecheck each changed workspace with `npx tsc --noEmit`. The `concurrency.cache
 
 ## 8. Current limits
 
-- **Replies are not restored.** The model's answer keeps placeholders, and the saved message stores what was sent. Restoration needs changes in the agent stream path (`api/server/controllers/agents/client.js`, `GenerationJobManager`) and before `saveMessage` in `api/server/controllers/agents/request.js`. The helpers `createStreamRestorer` and `restoreText` already exist in `packages/api/src/phi/vault.ts`.
-- **Mappings are in memory.** Restarts lose them, so restoring old placeholders afterward won't work.
-- **Only the current user message is covered.** Files, memories, system prompts and tool output aren't redacted.
-- **Assistants endpoints aren't covered.** Only the agents chat route is wired.
+- **The user's own message still shows placeholders.** The assistant's reply is restored (`packages/api/src/phi/reply.ts`, wired into `getDefaultHandlers` in `api/server/controllers/agents/callbacks.js`), but the user's own sent message is saved and echoed by a separate path (`getPreliminaryUserMessage` in `api/server/controllers/agents/request.js`) that still uses the redacted `req.body.text`. The original is available via `getPhiRequestState(req).originalText`; this just isn't wired in yet.
+- **Mappings are in memory.** Restarts lose them. A placeholder created before a restart can't be restored afterward, in either the user's message or a resumed reply.
+- **A fragment that never closes can't be restored, only preserved.** If a run step closes while a placeholder is still mid-token (no closing `>` ever arrives — rare, but possible on an aborted or truncated generation), the raw fragment (e.g. `<PERSON_1`) is still emitted and saved, just un-restored. See `flushStep` in `packages/api/src/phi/reply.ts`.
+- **Only the current user message is covered on the way in.** Files, memories, system prompts and tool output aren't redacted before the model call.
+- **Assistants endpoints aren't covered.** Only the agents chat route (all providers go through it) is wired, for both redaction and restoration.
 - **Not a compliance guarantee.** Presidio misses names and free-text identifiers. Get a compliance review before relying on it.
 - **Image not pinned.** `docker-compose.phi.yml` uses `mcr.microsoft.com/presidio-analyzer:latest`. Pin a tag before handing this to anyone else.
 

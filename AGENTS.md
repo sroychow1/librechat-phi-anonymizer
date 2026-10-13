@@ -212,4 +212,4 @@ the component's colocated `__tests__` and `test/layout-test-utils` where applica
 
 ## PHI anonymizer
 
-To set up, test, or troubleshoot the PHI anonymizer (Presidio sidecar, `phiAnonymizer` config), read `docs/phi-anonymizer-setup.md` first. Its gotchas are not obvious from the code. Redaction covers outgoing user messages only, and replies are not restored yet, so keep `phiAnonymizer.enabled` false for real users.
+To set up, test, or troubleshoot the PHI anonymizer (Presidio sidecar, `phiAnonymizer` config), read `docs/phi-anonymizer-setup.md` first. Its gotchas are not obvious from the code. Redaction covers the outgoing user message; the assistant's reply is restored, but the user's own saved message still shows placeholders, and mappings are in memory only. Read the runbook's "Current limits" before enabling it for real users.
