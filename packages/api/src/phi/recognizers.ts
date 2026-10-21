@@ -81,7 +81,7 @@ export const PHI_AD_HOC_RECOGNIZERS: readonly AdHocRecognizer[] = [
       {
         name: 'MRN',
         regex:
-          '\\b(?:MRN|Medical\\s+Record(?:\\s+(?:No\\.?|Number))?)[:\\s#-]*\\d{3,}(?:[-\\s]\\d+)*(?:[-\\s][A-Z0-9])?\\b',
+          '\\b(?:MRN|Medical\\s+Record(?:\\s+(?:No\\.?|Number))?|Chart(?:\\s+(?:No\\.?|Number))?)[:\\s#-]*\\d{3,}(?:[-\\s]\\d+)*(?:[-\\s][A-Z0-9])?\\b',
         score: 0.9,
       },
     ],
@@ -165,6 +165,27 @@ export const PHI_AD_HOC_RECOGNIZERS: readonly AdHocRecognizer[] = [
     context: ['code', 'pin', 'badge', 'number', 'id', 'identifier', 'access', 'employee'],
   },
   {
+    name: 'device_vehicle_id',
+    supported_language: 'en',
+    supported_entity: 'DEVICE_VEHICLE_ID',
+    // Device serial numbers, implant IDs, and license plates need a label (no fixed shape to
+    // key off otherwise). A VIN is always exactly 17 letters/digits excluding I, O, and Q
+    // (to avoid confusion with 1 and 0), so that one is also caught unlabeled.
+    patterns: [
+      {
+        name: 'LABELED_DEVICE_VEHICLE_ID',
+        regex:
+          '\\b(?:Serial(?:\\s+(?:No\\.?|Number|#))?|Device\\s*ID|Implant\\s*ID|License\\s*Plate(?:\\s+Number)?|Plate(?:\\s+Number)?|VIN)[:\\s#-]*[A-Za-z0-9-]{3,}\\b',
+        score: 0.8,
+      },
+      {
+        name: 'VIN_UNLABELED',
+        regex: '\\b[A-HJ-NPR-Z0-9]{17}\\b',
+        score: 0.6,
+      },
+    ],
+  },
+  {
     name: 'health_plan_id',
     supported_language: 'en',
     supported_entity: 'HEALTH_PLAN_ID',
@@ -242,4 +263,5 @@ export const PHI_DEFAULT_ENTITIES: readonly string[] = [
   'SPELLED_NUMBER',
   'CUSTOM_ID',
   'HEALTH_PLAN_ID',
+  'DEVICE_VEHICLE_ID',
 ];

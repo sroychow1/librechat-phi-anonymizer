@@ -12,6 +12,8 @@ The detection rules follow [`docs/phi-anonymizer-requirements.md`](phi-anonymize
 
 `packages/api/src/phi/pipeline.ts` (`buildFindings`) is the one place these merge with Presidio's own findings before redaction; `DATE_TIME` is dropped from the default Presidio entity set (`PHI_DEFAULT_ENTITIES` in `recognizers.ts`) because it tags every time expression, including weekdays and "tomorrow" — the narrower `findCalendarDates` replaces it.
 
+The remaining Tier 1 identifiers from the list are covered by labeled ad-hoc recognizers sent to Presidio (`recognizers.ts`), not by local code: `mrn` now also matches "Chart Number", health-plan member/subscriber/policy/group/claim/encounter (FIN) numbers are a `health_plan_id` entity, and device serial numbers, implant IDs, and license plates are a `device_vehicle_id` entity (plus an unlabeled 17-character VIN pattern, since a VIN is identifying even without a label). Since Presidio evaluates these server-side, `recognizers.spec.ts` only sanity-checks the regex itself as a `RegExp` against the labeled examples — it is not a guarantee of Presidio's actual behavior.
+
 ## 1. Requirements
 
 - Node 24 (`.nvmrc` pins 24.16.0). Node 20 breaks the `tsdown` build with `process.getBuiltinModule is not a function`.
@@ -166,6 +168,9 @@ Typecheck each changed workspace with `npx tsc --noEmit`. The `concurrency.cache
 - **Location substitution only knows California.** `location.ts` has a curated list of Southern/Northern California cities ported from the requirements doc's examples. Add entries there for any other region a deployment actually needs; an unlisted city still gets redacted (with no region hint) via Presidio's generic `LOCATION` entity.
 - **Patient-context detection is a keyword heuristic.** Whether a major city (Los Angeles, San Francisco, San Diego) is substituted depends on a regex match for clinical shorthand and pronouns in `location.ts`. It can both under-trigger (a patient sentence with none of those words) and over-trigger (a stray "she" in an unrelated sentence).
 - **The allow-list matches the flagged span exactly, which can shield a coincidental name.** A `PERSON` finding of just "Ana" is dropped by the same rule that keeps the lab score `ANA`, because the two are indistinguishable once case-folded. This is the same accepted trade-off as `anti-Smith` still redacting to `<PERSON> disease` — see the gotcha above.
+- **Biometrics, images, and counties aren't covered.** The requirements doc's Tier 1 list also names voice recordings, fingerprints, and full-face photos (non-text, out of scope for a text pipeline — see "only the current user message" above) and counties alongside cities (`location.ts` only tracks city-level place names, not county names).
+- **The unlabeled VIN pattern can false-positive on any other 17-character alphanumeric string** (an API key, a hash, a long reference code) — accepted deliberately, the same recall-over-precision call already made for the phone-number threshold, since a VIN has no label to require.
+- **ITIN isn't a distinct pattern.** It is 9 digits in the same shape as an SSN, so it is very likely still caught by Presidio's `US_SSN` recognizer, but there's no dedicated ITIN label match the way there is for MRN or health-plan IDs.
 
 ## 9. Uninstall
 
