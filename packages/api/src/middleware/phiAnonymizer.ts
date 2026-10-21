@@ -13,6 +13,7 @@ import type { PhiVault } from '../phi/vault';
 import { PHI_DEFAULT_ENTITIES } from '../phi/recognizers';
 import { createPhiVault, redactText } from '../phi/vault';
 import { PhiAnalyzerError } from '../phi/analyzer';
+import { buildFindings } from '../phi/pipeline';
 
 export interface PhiRequestState {
   readonly vault: PhiVault;
@@ -77,11 +78,12 @@ export function createPhiAnonymizer(options: CreatePhiAnonymizerOptions): Reques
         : createPhiVault();
 
     try {
-      const findings = await analyzerFor(config.analyzerUrl).analyze(text, {
+      const presidioFindings = await analyzerFor(config.analyzerUrl).analyze(text, {
         language: config.language,
         entities: config.entities ?? PHI_DEFAULT_ENTITIES,
         scoreThreshold: config.scoreThreshold,
       });
+      const findings = buildFindings(text, presidioFindings, config);
       req.body.text = redactText(text, findings, vault);
       REQUEST_STATE.set(req, { vault, originalText: text });
       logger.debug(`[phiAnonymizer] redacted ${findings.length} span(s)`);

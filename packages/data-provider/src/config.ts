@@ -3547,6 +3547,20 @@ export const phiAnonymizerSchema = z.object({
   failMode: z.enum(['block', 'passthrough']).default('block'),
   /** How long a conversation's placeholder mapping is kept after its last turn. */
   sessionTtlMinutes: z.number().int().min(1).max(10080).default(240),
+  /**
+   * Redacts real calendar dates (3/14/2026, March 14 2026, 2026-03-14) with a narrower,
+   * locally-run pattern. Presidio's own `DATE_TIME` entity is excluded from the default entity
+   * set for the reason this exists: it also tags weekdays and relative time, which Safe Harbor
+   * does not require removing.
+   */
+  redactCalendarDates: z.boolean().default(true),
+  /** Redacts an age only when it is over this threshold — Safe Harbor's own cutoff is 89. */
+  redactAges: z.boolean().default(true),
+  ageRedactionThreshold: z.number().int().min(0).max(130).default(89),
+  /** Substitutes known California place names with a reversible, region-coded placeholder. */
+  locationSubstitution: z.boolean().default(true),
+  /** State-level labels only ("California"), matching Safe Harbor's geography rule exactly. */
+  locationStrict: z.boolean().default(false),
 });
 
 export type PhiAnonymizerConfig = z.infer<typeof phiAnonymizerSchema>;

@@ -2,7 +2,15 @@
 
 How to install, verify, and troubleshoot the optional PHI anonymizer on a new machine. Written from a working end-to-end run; each gotcha below was hit once.
 
-The feature replaces PHI in the outgoing user message with placeholders (`<PERSON_1>`, `<MEDICAL_RECORD_NUMBER_1>`) before the model call, using a Microsoft Presidio analyzer container. The assistant's reply is restored back to the original text, live in the stream and in the saved message. The installer still ships the feature with `enabled: false` — real-user readiness also depends on the remaining items in [Current limits](#current-limits), in particular that the user's own message stays saved with placeholders and that placeholder mappings are in memory only.
+The feature replaces PHI in the outgoing user message with placeholders (`<PERSON_1>`, `<MEDICAL_RECORD_NUMBER_1>`) before the model call, using a Microsoft Presidio analyzer container plus a local pipeline layered on top of it. The assistant's reply is restored back to the original text, live in the stream and in the saved message. The installer still ships the feature with `enabled: false` — real-user readiness also depends on the remaining items in [Current limits](#current-limits), in particular that the user's own message stays saved with placeholders and that placeholder mappings are in memory only.
+
+The detection rules follow [`docs/phi-anonymizer-requirements.md`](phi-anonymizer-requirements.md), a balanced PHI list derived from the HIPAA Safe Harbor identifiers: always redact direct identifiers (names, MRNs, SSNs, ...); redact a date, address, ZIP, age, or record number only when it is actually acting as an identifier (a real calendar date, not "6 weeks"; an age over 89, not "65 yo"); and never redact a fixed set of terms that aren't identifiers at all (weekdays, lab scores, drug names, states, ...). Three pieces implement this on top of the original redact/restore/vault design:
+
+- **`packages/api/src/phi/localRecognizers.ts`** — `findCalendarDates` (real dates: `3/14/2026`, `2026-03-14`, `March 14, 2026`, a bare `March 3`; not `120/80` or `15/2.5`) and `findAges` (an age number, only over a configurable threshold, default 89). These run locally because Presidio's ad-hoc recognizers can't express a numeric comparison or a date-shaped-but-not-a-date distinction.
+- **`packages/api/src/phi/location.ts`** — substitutes known California place names with a reversible, region-coded placeholder (`<LOCATION_SOUTHERN_CALIFORNIA_CITY_1>`), so the model keeps geography useful for clinical reasoning (e.g. coccidioidomycosis risk) without the exact town. Minor cities are always substituted; major ones (Los Angeles, San Francisco, San Diego) are left as written unless the message reads as being about a specific patient. This intentionally reuses the `<ENTITY_TYPE_N>` placeholder convention instead of the requirements doc's literal `[LOC_1, a Southern California city]` bracket format, to get the already-tested restore and streaming-holdback logic for free.
+- **`packages/api/src/phi/allowlist.ts`** — a Tier 3 safety net: a finding is dropped only when its *exact* matched text (not a substring of it) is on the list (a weekday, "Q3 2026", "DAS28", "California", "HIPAA", ...). This is why a `PERSON` finding of just "Smith" inside "anti-Smith" still gets redacted: the flagged span is "Smith", not "anti-Smith", so the allow-list entry for the whole eponym doesn't apply to it. That is a deliberate trade-off from the requirements doc, not a bug.
+
+`packages/api/src/phi/pipeline.ts` (`buildFindings`) is the one place these merge with Presidio's own findings before redaction; `DATE_TIME` is dropped from the default Presidio entity set (`PHI_DEFAULT_ENTITIES` in `recognizers.ts`) because it tags every time expression, including weekdays and "tomorrow" — the narrower `findCalendarDates` replaces it.
 
 ## 1. Requirements
 
@@ -44,7 +52,19 @@ phiAnonymizer:
   failMode: block        # block (default, fail closed) | passthrough
 ```
 
-Omitted fields take schema defaults: `language: en`, `scoreThreshold: 0.35`, `sessionTtlMinutes: 240`. The defaults are applied by `loadPhiAnonymizerConfig` in `packages/data-schemas/src/app/service.ts`. Before that fix, omitted fields reached the analyzer as `undefined`.
+Omitted fields take schema defaults: `language: en`, `scoreThreshold: 0.35`, `sessionTtlMinutes: 240`, `redactCalendarDates: true`, `redactAges: true`, `ageRedactionThreshold: 89`, `locationSubstitution: true`, `locationStrict: false`. The defaults are applied by `loadPhiAnonymizerConfig` in `packages/data-schemas/src/app/service.ts`. Before that fix, omitted fields reached the analyzer as `undefined`.
+
+The four local-pipeline toggles can be set independently in `librechat.yaml`:
+
+```yaml
+phiAnonymizer:
+  enabled: true
+  redactCalendarDates: true   # off: 3/14/2026, March 3, etc. pass through unredacted
+  redactAges: true            # off: no age is ever redacted, regardless of threshold
+  ageRedactionThreshold: 89   # Safe Harbor's own cutoff; raise/lower only with a documented reason
+  locationSubstitution: true  # off: California place names are left to Presidio's own LOCATION
+  locationStrict: false       # true: both CA regions collapse to <LOCATION_CALIFORNIA_N>
+```
 
 Restart after any `librechat.yaml` change.
 
@@ -119,6 +139,8 @@ Each of these cost time once.
 - **Presidio misses phone numbers at 0.5.** Phone numbers score about 0.4. The default is 0.35. Lower values catch more and may over-redact.
 - **`14 Oak Street` is labeled `LOCATION`, not `STREET_ADDRESS`.** Overlapping detections keep the higher score. The text is still redacted, so this is cosmetic.
 - **Missing model key looks like a PHI bug.** Test with `StubModel` first, so a provider error doesn't hide whether redaction ran.
+- **A short allow-listed abbreviation can shield a real name that happens to match it.** The Tier 3 list includes lab scores like `ANA`; a `PERSON` finding whose matched text is exactly "Ana" (case-insensitively) is dropped by the allow-list, same as the lab score would be. This bit the test fixtures directly — the original test name was "Ana" and had to be renamed to "Mia" to stop colliding with the `ANA` entry. It is the same whole-phrase-match trade-off as `anti-Smith`, just surfacing on a given name instead of a surname.
+- **Location substitution is California-only.** `location.ts` only knows Southern/Northern California place names, ported from the examples in `docs/phi-anonymizer-requirements.md`. A city outside that list falls through to Presidio's own `LOCATION` entity (redacted, no region descriptor); "New York" and "London" are exempted as general major cities via the allow-list instead, so unlike the CA majors they are kept even in patient context — a known, documented deviation.
 
 ## 7. Tests
 
@@ -127,6 +149,8 @@ cd packages/api && npx jest src/phi src/middleware/phiAnonymizer.spec.ts
 cd packages/data-schemas && npx jest src/app/service.spec.ts
 cd packages/data-provider && npx jest
 ```
+
+`src/phi/allowlist.spec.ts`, `localRecognizers.spec.ts`, and `location.spec.ts` cover the Tier 1–3 rules on their own; the five location-substitution examples from the requirements doc are each a test case. `phiAnonymizer.spec.ts` covers the merged pipeline end to end through the real middleware (a date, an age, and a city alongside a fake-Presidio `PERSON`/`MRN` finding in one message), including the per-toggle off switches.
 
 Typecheck each changed workspace with `npx tsc --noEmit`. The `concurrency.cache_integration.spec.ts` suite in `packages/api` needs a running Redis and fails without one.
 
@@ -139,6 +163,9 @@ Typecheck each changed workspace with `npx tsc --noEmit`. The `concurrency.cache
 - **Assistants endpoints aren't covered.** Only the agents chat route (all providers go through it) is wired, for both redaction and restoration.
 - **Not a compliance guarantee.** Presidio misses names and free-text identifiers. Get a compliance review before relying on it.
 - **Image not pinned.** `docker-compose.phi.yml` uses `mcr.microsoft.com/presidio-analyzer:latest`. Pin a tag before handing this to anyone else.
+- **Location substitution only knows California.** `location.ts` has a curated list of Southern/Northern California cities ported from the requirements doc's examples. Add entries there for any other region a deployment actually needs; an unlisted city still gets redacted (with no region hint) via Presidio's generic `LOCATION` entity.
+- **Patient-context detection is a keyword heuristic.** Whether a major city (Los Angeles, San Francisco, San Diego) is substituted depends on a regex match for clinical shorthand and pronouns in `location.ts`. It can both under-trigger (a patient sentence with none of those words) and over-trigger (a stray "she" in an unrelated sentence).
+- **The allow-list matches the flagged span exactly, which can shield a coincidental name.** A `PERSON` finding of just "Ana" is dropped by the same rule that keeps the lab score `ANA`, because the two are indistinguishable once case-folded. This is the same accepted trade-off as `anti-Smith` still redacting to `<PERSON> disease` — see the gotcha above.
 
 ## 9. Uninstall
 

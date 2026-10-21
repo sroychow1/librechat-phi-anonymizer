@@ -102,6 +102,11 @@ describe('loadPhiAnonymizerConfig', () => {
       scoreThreshold: 0.35,
       failMode: 'block',
       sessionTtlMinutes: 240,
+      redactCalendarDates: true,
+      redactAges: true,
+      ageRedactionThreshold: 89,
+      locationSubstitution: true,
+      locationStrict: false,
     });
   });
 

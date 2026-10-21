@@ -165,6 +165,21 @@ export const PHI_AD_HOC_RECOGNIZERS: readonly AdHocRecognizer[] = [
     context: ['code', 'pin', 'badge', 'number', 'id', 'identifier', 'access', 'employee'],
   },
   {
+    name: 'health_plan_id',
+    supported_language: 'en',
+    supported_entity: 'HEALTH_PLAN_ID',
+    // Health-plan member/subscriber, policy, group, claim, and encounter (FIN) numbers.
+    // Labeled only, same as `mrn` above, so an unlabeled number is never touched.
+    patterns: [
+      {
+        name: 'HEALTH_PLAN_ID',
+        regex:
+          '\\b(?:(?:Member|Subscriber)\\s*ID|Policy(?:\\s+Number)?|Group(?:\\s+Number)?|Claim(?:\\s+Number)?|(?:Encounter|FIN)(?:\\s+Number)?)[:\\s#-]*[A-Za-z0-9-]{3,}\\b',
+        score: 0.8,
+      },
+    ],
+  },
+  {
     name: 'custom_id',
     supported_language: 'en',
     supported_entity: 'CUSTOM_ID',
@@ -193,11 +208,19 @@ export const PHI_AD_HOC_RECOGNIZERS: readonly AdHocRecognizer[] = [
   },
 ];
 
-/** Presidio built-ins that cover the HIPAA Safe Harbor identifiers, plus the custom set above. */
+/**
+ * Presidio built-ins that cover the HIPAA Safe Harbor identifiers, plus the custom set above.
+ *
+ * `DATE_TIME` is deliberately left out: Presidio's built-in detector tags every time expression,
+ * including weekdays, "tomorrow", and "6 weeks", none of which Safe Harbor requires removing.
+ * Real calendar dates (the day/month elements Safe Harbor does require removing) are instead
+ * matched locally by `findCalendarDates` in `localRecognizers.ts`, run alongside this entity set
+ * by the PHI pipeline. An operator who wants Presidio's broader `DATE_TIME` back can still add it
+ * via the `entities` override in `librechat.yaml`.
+ */
 export const PHI_DEFAULT_ENTITIES: readonly string[] = [
   'PERSON',
   'LOCATION',
-  'DATE_TIME',
   'PHONE_NUMBER',
   'EMAIL_ADDRESS',
   'US_SSN',
@@ -218,4 +241,5 @@ export const PHI_DEFAULT_ENTITIES: readonly string[] = [
   'US_ZIP_CODE',
   'SPELLED_NUMBER',
   'CUSTOM_ID',
+  'HEALTH_PLAN_ID',
 ];

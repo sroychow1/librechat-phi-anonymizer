@@ -31,9 +31,14 @@ phiAnonymizer:
   scoreThreshold: 0.35
   failMode: block        # block: refuse the message if the analyzer is down; passthrough: send unredacted
   sessionTtlMinutes: 240
+  redactCalendarDates: true   # off: real dates (3/14/2026, March 3, ...) pass through unredacted
+  redactAges: true            # off: no age is ever redacted
+  ageRedactionThreshold: 89   # Safe Harbor's own cutoff: ages over 89 are redacted, 89 and under are kept
+  locationSubstitution: true  # off: California place names are left to Presidio's own LOCATION entity
+  locationStrict: false       # true: collapses both CA regions to state-level <LOCATION_CALIFORNIA_N>
 ```
 
-`entities` is optional. Omit it to use the built-in PHI set, which is defined in `packages/api/src/phi/recognizers.ts`.
+`entities` is optional. Omit it to use the built-in PHI set, which is defined in `packages/api/src/phi/recognizers.ts`. The detection rules — what always gets redacted, what only gets redacted when it's really an identifier, and what never gets redacted — follow [`docs/phi-anonymizer-requirements.md`](../../docs/phi-anonymizer-requirements.md); see `docs/phi-anonymizer-setup.md` for how that maps onto the code.
 
 ## Uninstall
 
@@ -46,6 +51,7 @@ Then remove `:docker-compose.phi.yml` from `COMPOSE_FILE` in `.env` and set `ena
 ## What is in place
 
 - Detection, placeholder assignment, and per-conversation placeholder reuse (`packages/api/src/phi/vault.ts`, `recognizers.ts`, `session.ts`).
+- A balanced-list pipeline on top of Presidio (`packages/api/src/phi/pipeline.ts`): real calendar dates and ages over a threshold detected locally (`localRecognizers.ts`), California place names substituted with a reversible, region-coded placeholder (`location.ts`), and a Tier 3 allow-list that protects weekdays, lab scores, drug names, and similar non-identifiers from being redacted (`allowlist.ts`).
 - Outgoing-message redaction in the agents chat route (`packages/api/src/middleware/phiAnonymizer.ts`), which runs after the existing PII filter and before moderation.
 - Reply restoration (`packages/api/src/phi/reply.ts`), wired into the single handler all providers share for streamed text (`getDefaultHandlers` in `api/server/controllers/agents/callbacks.js`). Covers the live stream and the saved message.
 - Config (`phiAnonymizer` in `packages/data-provider/src/config.ts`) with defaults that keep the feature off.
@@ -59,6 +65,8 @@ Then remove `:docker-compose.phi.yml` from `COMPOSE_FILE` in `.env` and set `ena
 - **Only the current user message is covered on the way in.** Uploaded files, memories, system prompts and tool output are not redacted.
 - **Not a compliance guarantee.** Presidio's name and place detection misses cases. Treat this as a risk reducer, and have a compliance review before relying on it for PHI.
 - **Assistants endpoints** are not covered. Only the agents chat route is wired, for both redaction and restoration.
+- **Location substitution only knows California.** Other regions need entries added to `location.ts`; elsewhere, an unlisted city is still redacted by Presidio's generic `LOCATION` entity, just without a region hint.
+- **The allow-list matches the exact flagged span.** A name that happens to equal an allow-listed abbreviation (e.g. a `PERSON` finding of "Ana" vs. the lab score "ANA") is shielded the same way a real non-identifier would be. See `docs/phi-anonymizer-setup.md` for the full list of gotchas.
 
 ## Tests
 

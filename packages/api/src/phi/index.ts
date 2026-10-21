@@ -1,5 +1,10 @@
 export { createPresidioAnalyzer, PhiAnalyzerError } from './analyzer';
 export type { AnalyzeOptions, PhiFinding, PresidioAnalyzer } from './analyzer';
+export { isAllowlisted, filterAllowlisted, PHI_ALLOWLIST_TERMS } from './allowlist';
+export { findAges, findCalendarDates } from './localRecognizers';
+export { findLocationSubstitutions } from './location';
+export type { LocationSubstitutionOptions } from './location';
+export { buildFindings, collectLocalFindings } from './pipeline';
 export { PHI_AD_HOC_RECOGNIZERS, PHI_DEFAULT_ENTITIES } from './recognizers';
 export { createPhiReplyRestorer } from './reply';
 export type { PhiFlushedStep, PhiReplyRestorer } from './reply';
